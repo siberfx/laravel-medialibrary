@@ -13,6 +13,7 @@ use Spatie\MediaLibrary\MediaCollections\Exceptions\RequestDoesNotHaveFile;
 use Spatie\MediaLibrary\MediaCollections\Exceptions\UnknownType;
 use Spatie\MediaLibrary\MediaCollections\Exceptions\UnreachableUrl;
 use Spatie\MediaLibrary\Tests\TestCase;
+use Spatie\MediaLibrary\Tests\TestSupport\RenameOriginalFileNamer;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 
 class IntegrationTest extends TestCase
@@ -23,6 +24,16 @@ class IntegrationTest extends TestCase
         $media = $this->testModel
             ->addMedia($this->getTestJpg())
             ->toMediaCollection();
+
+        $this->assertEquals('default', $media->collection_name);
+    }
+
+    /** @test */
+    public function toMediaCollection_has_an_alias_called_toMediaLibrary()
+    {
+        $media = $this->testModel
+            ->addMedia($this->getTestJpg())
+            ->toMediaLibrary();
 
         $this->assertEquals('default', $media->collection_name);
     }
@@ -163,6 +174,8 @@ class IntegrationTest extends TestCase
             'image/jpeg',
             filesize($this->getTestFilesDirectory('test.jpg'))
         );
+
+        $this->withoutExceptionHandling();
 
         $result = $this->call('get', 'upload', [], [], ['file' => $fileUpload]);
 
@@ -346,6 +359,18 @@ class IntegrationTest extends TestCase
     }
 
     /** @test */
+    public function it_can_add_a_remote_file_with_an_accent_in_the_name_to_the_media_library()
+    {
+        $url = 'https://orbit.brightbox.com/v1/acc-jqzwj/Marquis-Leisure/reviews/images/000/000/898/original/Antar%C3%A8sThumb.jpg';
+
+        $media = $this->testModel
+            ->addMediaFromUrl($url)
+            ->toMediaCollection();
+
+        $this->assertFileExists($this->getMediaDirectory("{$media->id}/AntarèsThumb.jpg"));
+    }
+
+    /** @test */
     public function it_wil_thrown_an_exception_when_a_remote_file_could_not_be_added()
     {
         $url = 'https://docs.spatie.be/images/medialibrary/thisonedoesnotexist.jpg';
@@ -415,6 +440,19 @@ class IntegrationTest extends TestCase
 
         $this->assertEquals('test', $media->name);
         $this->assertFileExists($this->getMediaDirectory($media->id.'/new_file_name.jpg'));
+    }
+
+    /** @test */
+    public function the_file_name_can_be_modified_using_a_file_namer()
+    {
+        config()->set('media-library.file_namer', RenameOriginalFileNamer::class);
+
+        $media = $this->testModel
+            ->addMedia($this->getTestJpg())
+            ->toMediaCollection();
+
+        $this->assertEquals('test', $media->name);
+        $this->assertFileExists($this->getMediaDirectory($media->id.'/renamed_original_file.jpg'));
     }
 
     /** @test */
@@ -521,6 +559,33 @@ class IntegrationTest extends TestCase
     }
 
     /** @test */
+    public function a_string_can_be_accepted_to_be_added_to_the_media_library()
+    {
+        $string = 'test123';
+
+        $media = $this->testModel
+            ->addMediaFromString($string)
+            ->toMediaCollection();
+
+        $this->assertEquals($string, file_get_contents($media->getPath()));
+    }
+
+    /** @test */
+    public function a_stream_can_be_accepted_to_be_added_to_the_media_library()
+    {
+        $string = 'test123';
+        $stream = fopen('php://temp', 'w+');
+        fwrite($stream, $string);
+        rewind($stream);
+
+        $media = $this->testModel
+            ->addMediaFromStream($stream)
+            ->toMediaCollection();
+
+        $this->assertEquals($string, file_get_contents($media->getPath()));
+    }
+
+    /** @test */
     public function it_can_add_data_uri_prefixed_base64_encoded_file_to_the_medialibrary()
     {
         $testFile = $this->getTestJpg();
@@ -594,7 +659,7 @@ class IntegrationTest extends TestCase
             filesize($this->getTestFilesDirectory('test.jpg'))
         );
 
-        $result = $this->call('get', 'upload', [], [], ['file' => ['name'=>$fileUpload]]);
+        $result = $this->call('get', 'upload', [], [], ['file' => ['name' => $fileUpload]]);
 
         $this->assertEquals(200, $result->getStatusCode());
     }

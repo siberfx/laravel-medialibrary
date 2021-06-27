@@ -10,7 +10,7 @@ use Illuminate\Support\Str;
 use Spatie\MediaLibrary\Conversions\Conversion;
 use Spatie\MediaLibrary\Conversions\ConversionCollection;
 use Spatie\MediaLibrary\Conversions\FileManipulator;
-use Spatie\MediaLibrary\MediaCollections\Exceptions\FileCannotBeAdded;
+use Spatie\MediaLibrary\MediaCollections\Exceptions\DiskDoesNotExist;
 use Spatie\MediaLibrary\MediaCollections\MediaRepository;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Spatie\MediaLibrary\ResponsiveImages\RegisteredResponsiveImages;
@@ -23,7 +23,8 @@ class CleanCommand extends Command
     protected $signature = 'media-library:clean {modelType?} {collectionName?} {disk?}
     {--dry-run : List files that will be removed without removing them},
     {--force : Force the operation to run when in production},
-    {--rate-limit= : Limit the number of requests per second }';
+    {--rate-limit= : Limit the number of requests per second },
+    {--skip-conversions : Do not remove deprecated conversions}';
 
     protected $description = 'Clean deprecated conversions and files without related model.';
 
@@ -57,7 +58,9 @@ class CleanCommand extends Command
         $this->isDryRun = $this->option('dry-run');
         $this->rateLimit = (int) $this->option('rate-limit');
 
-        $this->deleteFilesGeneratedForDeprecatedConversions();
+        if (! $this->option('skip-conversions')) {
+            $this->deleteFilesGeneratedForDeprecatedConversions();
+        }
 
         $this->deleteOrphanedDirectories();
 
@@ -145,7 +148,7 @@ class CleanCommand extends Command
         $diskName = $this->argument('disk') ?: config('media-library.disk_name');
 
         if (is_null(config("filesystems.disks.{$diskName}"))) {
-            throw FileCannotBeAdded::diskDoesNotExist($diskName);
+            throw DiskDoesNotExist::create($diskName);
         }
         $mediaClass = config('media-library.media_model');
         $mediaInstance = new $mediaClass();
@@ -175,10 +178,12 @@ class CleanCommand extends Command
         $generatedConversionName = null;
 
         $media->getGeneratedConversions()
-            ->filter(fn (bool $isGenerated, string $generatedConversionName) => Str::contains($conversionFile, $generatedConversionName))
-            ->each(function (bool $isGenerated, string $generatedConversionName) use ($media) {
-                $media->markAsConversionGenerated($generatedConversionName, false);
-            });
+            ->filter(
+                fn (bool $isGenerated, string $generatedConversionName) => Str::contains($conversionFile, $generatedConversionName)
+            )
+            ->each(
+                fn (bool $isGenerated, string $conversionName) => $media->markAsConversionNotGenerated($conversionName)
+            );
 
         $media->save();
     }
